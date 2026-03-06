@@ -34,6 +34,9 @@ class SmartImageOptimizer
             'sio_apply_cat_folders',
             'sio_scan_refs',
             'sio_fix_refs',
+            'sio_get_videos',
+            'sio_video_seo',
+            'sio_video_screenshot',
         ] as $a)
             add_action("wp_ajax_{$a}", [$this, "ajax_{$a}"]);
     }
@@ -150,7 +153,8 @@ class SmartImageOptimizer
                 'width' => $meta['width'] ?? 0,
                 'height' => $meta['height'] ?? 0,
                 'size_kb' => $kb,
-                'bad_name' => $bad
+                'bad_name' => $bad,
+                'type' => 'image'
             ];
         }
         wp_send_json_success(['images' => $out, 'total' => $q->found_posts, 'total_pages' => $q->max_num_pages]);
@@ -1032,6 +1036,7 @@ class SmartImageOptimizer
 
                 <div class="sio-tabs">
                     <button class="tab active" data-tab="browse">📂 Images</button>
+                    <button class="tab" data-tab="videos">🎬 Videos</button>
                     <button class="tab" data-tab="bulk">⚡ Bulk AI</button>
                     <button class="tab" data-tab="unused">🗑 Unused</button>
                     <button class="tab" data-tab="cats">📁 Categorize</button>
@@ -1059,6 +1064,26 @@ class SmartImageOptimizer
                     </div>
                     <div id="grid" class="grid"></div>
                     <div id="pagination"></div>
+                </div>
+
+                <!-- VIDEOS -->
+                <div class="pane" id="tab-videos">
+                    <div class="toolbar">
+                        <input type="text" id="vid-search" placeholder="🔍 Search videos..." />
+                        <select id="vid-per-page">
+                            <option value="24">24/page</option>
+                            <option value="48">48</option>
+                        </select>
+                        <button id="vid-load-btn" class="btn primary">Load Videos</button>
+                        <label class="chk-lbl"><input type="checkbox" id="vid-sel-all"> Select all</label>
+                        <span id="vid-sel-count" class="sel-count"></span>
+                    </div>
+                    <div id="vid-ffmpeg-notice" class="notice warn" style="display:none">
+                        ⚠ <strong>FFmpeg not detected</strong> — Screenshots require FFmpeg. Contact your host or install it.
+                        Some servers have it already; try taking a screenshot to check.
+                    </div>
+                    <div id="vid-grid" class="grid"></div>
+                    <div id="vid-pagination"></div>
                 </div>
 
                 <!-- BULK -->
@@ -1284,6 +1309,333 @@ class SmartImageOptimizer
         </body>
 
         </html>
+
+        /* ════════════════════════════════════════════════════════════
+        VIDEO — LIST
+        ════════════════════════════════════════════════════════════ */
+        public function ajax_sio_get_videos() {
+        check_ajax_referer( 'sio_nonce', 'nonce' );
+        $page = max(1, intval($_POST['page'] ?? 1));
+        $pp = max(1, intval($_POST['per_page'] ?? 24));
+        $src = sanitize_text_field($_POST['search'] ?? '');
+
+        $mime_types = ['video/mp4','video/webm','video/ogg','video/quicktime','video/x-msvideo','video/x-ms-wmv','video/mpeg'];
+        $args = [
+        'post_type' => 'attachment',
+        'post_mime_type' => $mime_types,
+        'post_status' => 'inherit',
+        'posts_per_page' => $pp,
+        'paged' => $page,
+        'orderby' => 'date',
+        'order' => 'DESC',
+        ];
+        if ($src) $args['s'] = $src;
+        $q = new WP_Query($args);
+
+        $out = [];
+        foreach ($q->posts as $p) {
+        $f = get_attached_file($p->ID);
+        $fn = basename($f ?? '');
+        $kb = ($f && file_exists($f)) ? round(filesize($f)/1024,1) : 0;
+        $mb = round($kb/1024,2);
+        $meta = wp_get_attachment_metadata($p->ID);
+        $thumb = get_post_thumbnail_id($p->ID)
+        ? wp_get_attachment_image_url(get_post_thumbnail_id($p->ID),'thumbnail')
+        : null;
+        // Try WordPress generated video thumbnail
+        if (!$thumb) {
+        $thumb_id = get_post_meta($p->ID,'_thumbnail_id',true);
+        if ($thumb_id) $thumb = wp_get_attachment_image_url($thumb_id,'thumbnail');
+        }
+
+        $out[] = [
+        'id' => $p->ID,
+        'filename' => $fn,
+        'url' => wp_get_attachment_url($p->ID),
+        'thumb' => $thumb,
+        'size_mb' => $mb,
+        'size_kb' => $kb,
+        'duration' => $meta['length_formatted'] ?? ($meta['length'] ?? ''),
+        'width' => $meta['width'] ?? 0,
+        'height' => $meta['height'] ?? 0,
+        'mime' => get_post_mime_type($p->ID),
+        'title' => $p->post_title,
+        'alt' => get_post_meta($p->ID,'_wp_attachment_image_alt',true),
+        'bad_name' => $this->bad_name($fn),
+        'type' => 'video',
+        'has_thumb' => !empty($thumb),
+        'seo_title' => $p->post_title,
+        'seo_desc' => $p->post_content,
+        ];
+        }
+
+        wp_send_json_success([
+        'videos' => $out,
+        'total' => $q->found_posts,
+        'total_pages' => $q->max_num_pages,
+        ]);
+        }
+
+        /* ════════════════════════════════════════════════════════════
+        VIDEO — AI SEO (text-based, no vision needed)
+        ════════════════════════════════════════════════════════════ */
+        public function ajax_sio_video_seo() {
+        check_ajax_referer( 'sio_nonce', 'nonce' );
+        $id = intval($_POST['id']);
+        $post = get_post($id);
+        if (!$post) wp_send_json_error('Video not found');
+
+        $f = get_attached_file($id);
+        $fn = basename($f ?? $post->guid);
+        $meta = wp_get_attachment_metadata($id);
+        $dur = $meta['length_formatted'] ?? ($meta['length'] ?? '');
+        $s = $this->cfg();
+        $ctx = $s['ai_context'] ?? '';
+        $lng = $s['ai_language'] ?? 'en';
+
+        // Build text prompt for video SEO
+        $result = $this->ai_video_seo($fn, $dur, $ctx, $lng);
+        if (is_wp_error($result)) wp_send_json_error($result->get_error_message());
+
+        // Apply to DB if requested
+        if (!empty($_POST['apply'])) {
+        wp_update_post([
+        'ID' => $id,
+        'post_title' => $result['title'],
+        'post_excerpt' => $result['description'],
+        'post_content' => $result['description'],
+        'post_name' => sanitize_title($result['slug']),
+        ]);
+        update_post_meta($id,'_wp_attachment_image_alt', $result['title']);
+        // Rename file to SEO slug
+        $new_name = $result['slug'] . '-' . $id;
+        $renamed = $this->do_rename($id, $new_name);
+        if (!is_wp_error($renamed)) $result['new_filename'] = $renamed['new_filename'];
+        }
+
+        wp_send_json_success($result);
+        }
+
+        private function ai_video_seo(string $filename, string $duration, string $ctx, string $lang) {
+        $s = $this->cfg();
+        $prov= $s['ai_provider'] ?? 'groq';
+        $key = match($prov) {
+        'anthropic' => trim($s['api_key'] ?? ''),
+        'gemini' => trim($s['gemini_key'] ?? ''),
+        default => trim($s['groq_key'] ?? ''),
+        };
+        if (!$key) return new \WP_Error('no_key','API key missing — go to Settings');
+
+        $clean = preg_replace('/[-_]+/',' ', pathinfo($filename,PATHINFO_FILENAME));
+        $clean = preg_replace('/\s+\d+$/','',$clean);
+        $lang_p = match($lang){ 'ar'=>'Use English relevant to Arabic-speaking markets.','auto'=>'Use the most appropriate SEO
+        English.', default=>'Use English.' };
+        $ctx_p = $ctx ? "
+        Website context: {$ctx}" : '';
+        $dur_p = $duration ? "
+        Video duration: {$duration}" : '';
+
+        $prompt = "Generate SEO metadata for a video file.
+        "
+        . "Filename hint: "{$clean}"
+        "
+        . "{$dur_p}{$ctx_p}
+        "
+        . "Language: {$lang_p}
+
+        "
+        . "Return ONLY valid JSON (no markdown, no explanation):
+        "
+        . "{
+        "
+        . " "slug": "seo-friendly-slug-2-5-words",
+        "
+        . " "title": "SEO Title (5-8 words, title case)",
+        "
+        . " "description": "A 1-2 sentence description for SEO (20-40 words).",
+        "
+        . " "tags": ["tag1","tag2","tag3","tag4","tag5"]
+        "
+        . "}";
+
+        $raw = '';
+        if ($prov==='groq') {
+        $body = wp_json_encode(['model'=>'meta-llama/llama-4-scout-17b-16e-instruct','max_tokens'=>300,'temperature'=>0.3,
+        'messages'=>[['role'=>'user','content'=>$prompt]]]);
+        $r =
+        wp_remote_post('https://api.groq.com/openai/v1/chat/completions',['timeout'=>20,'headers'=>['Content-Type'=>'application/json','Authorization'=>"Bearer
+        {$key}"],'body'=>$body]);
+        if (is_wp_error($r)) return $r;
+        $code = wp_remote_retrieve_response_code($r);
+        $json = json_decode(wp_remote_retrieve_body($r),true);
+        if ($code!==200) return new \WP_Error('api','Groq: '.($json['error']['message']??"HTTP {$code}"));
+        $raw = $json['choices'][0]['message']['content'] ?? '';
+        } elseif ($prov==='anthropic') {
+        $body = wp_json_encode(['model'=>$s['ai_model']??'claude-haiku-4-5-20251001','max_tokens'=>300,
+        'messages'=>[['role'=>'user','content'=>$prompt]]]);
+        $r =
+        wp_remote_post('https://api.anthropic.com/v1/messages',['timeout'=>20,'headers'=>['Content-Type'=>'application/json','x-api-key'=>$key,'anthropic-version'=>'2023-06-01'],'body'=>$body]);
+        if (is_wp_error($r)) return $r;
+        $code = wp_remote_retrieve_response_code($r);
+        $json = json_decode(wp_remote_retrieve_body($r),true);
+        if ($code!==200) return new \WP_Error('api','Anthropic: '.($json['error']['message']??"HTTP {$code}"));
+        $raw = $json['content'][0]['text'] ?? '';
+        } else {
+        // Gemini
+        $body =
+        wp_json_encode(['contents'=>[['parts'=>[['text'=>$prompt]]]],'generationConfig'=>['maxOutputTokens'=>300,'temperature'=>0.3]]);
+        $r =
+        wp_remote_post("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key={$key}",['timeout'=>20,'headers'=>['Content-Type'=>'application/json'],'body'=>$body]);
+        if (is_wp_error($r)) return $r;
+        $code = wp_remote_retrieve_response_code($r);
+        $json = json_decode(wp_remote_retrieve_body($r),true);
+        if ($code!==200) return new \WP_Error('api','Gemini: '.($json['error']['message']??"HTTP {$code}"));
+        $raw = $json['candidates'][0]['content']['parts'][0]['text'] ?? '';
+        }
+
+        // Clean JSON (strip markdown code fences if present)
+        $raw = preg_replace('/^```(?:json)?\s*/i','',$raw);
+        $raw = preg_replace('/\s*```\s*$/','',$raw);
+        $raw = trim($raw);
+
+        $data = json_decode($raw,true);
+        if (!$data || !isset($data['slug']))
+        return new \WP_Error('parse',"AI returned invalid JSON. Raw: ".substr($raw,0,200));
+
+        // Sanitise slug
+        $data['slug'] = trim(preg_replace('/[^a-z0-9\-]/','',strtolower($data['slug'])),'-');
+
+        return $data;
+        }
+
+        /* ════════════════════════════════════════════════════════════
+        VIDEO — SCREENSHOT / THUMBNAIL EXTRACTION
+        ════════════════════════════════════════════════════════════ */
+        public function ajax_sio_video_screenshot() {
+        check_ajax_referer( 'sio_nonce', 'nonce' );
+        if (!current_user_can('manage_options')) wp_send_json_error();
+        $id = intval($_POST['id']);
+        $at = floatval($_POST['at'] ?? 1); // seconds into video
+
+        $f = get_attached_file($id);
+        if (!$f || !file_exists($f)) wp_send_json_error('Video file not found');
+
+        $result = $this->extract_video_frame($id, $f, $at);
+        if (is_wp_error($result)) wp_send_json_error($result->get_error_message());
+
+        wp_send_json_success($result);
+        }
+
+        private function extract_video_frame(int $video_id, string $video_path, float $at = 1.0) {
+        $ud = wp_upload_dir();
+        $dir = dirname($video_path);
+        $stem = pathinfo($video_path, PATHINFO_FILENAME);
+        $thumb_fn = $stem . '-screenshot.jpg';
+        $thumb_f = $dir . '/' . $thumb_fn;
+        $thumb_u = $ud['baseurl'] . '/' . _wp_relative_upload_root($thumb_f);
+
+        // ── Method 1: FFmpeg (best quality) ──
+        $ffmpeg = $this->find_ffmpeg();
+        if ($ffmpeg) {
+        $at_str = sprintf('%02d:%02d:%06.3f', floor($at/3600), floor(fmod($at,3600)/60), fmod($at,60));
+        $cmd = escapeshellcmd($ffmpeg)
+        . ' -ss ' . escapeshellarg($at_str)
+        . ' -i ' . escapeshellarg($video_path)
+        . ' -frames:v 1 -q:v 2 -y '
+        . escapeshellarg($thumb_f)
+        . ' 2>/dev/null';
+        exec($cmd, $out, $ret);
+        if ($ret===0 && file_exists($thumb_f) && filesize($thumb_f)>0)
+        return $this->attach_video_thumb($video_id, $thumb_f, $thumb_fn, $ud, 'ffmpeg');
+        }
+
+        // ── Method 2: WordPress built-in (if FFmpeg extension available) ──
+        if (function_exists('wp_read_video_metadata')) {
+        $vm = wp_read_video_metadata($video_path);
+        if (!empty($vm['image']['data'])) {
+        file_put_contents($thumb_f, $vm['image']['data']);
+        if (file_exists($thumb_f) && filesize($thumb_f)>0)
+        return $this->attach_video_thumb($video_id, $thumb_f, $thumb_fn, $ud, 'wp_metadata');
+        }
+        }
+
+        // ── Method 3: GD from embedded thumbnail (MP4 moov atom) ──
+        $embedded = $this->extract_mp4_thumb($video_path);
+        if ($embedded) {
+        file_put_contents($thumb_f, $embedded);
+        return $this->attach_video_thumb($video_id, $thumb_f, $thumb_fn, $ud, 'embedded');
+        }
+
+        return new \WP_Error('no_method',
+        'No screenshot method available on this server. '
+        .(function_exists('exec')?'FFmpeg not found — install it: <code>apt install ffmpeg</code>':'exec() is disabled by
+        hosting provider.')
+        );
+        }
+
+        private function find_ffmpeg(): ?string {
+        foreach (['/usr/bin/ffmpeg','/usr/local/bin/ffmpeg','/opt/homebrew/bin/ffmpeg'] as $p)
+        if (@is_executable($p)) return $p;
+        if (function_exists('exec')) {
+        exec('which ffmpeg 2>/dev/null', $out, $ret);
+        if ($ret===0 && !empty($out[0])) return trim($out[0]);
+        }
+        return null;
+        }
+
+        private function extract_mp4_thumb(string $path): ?string {
+        // Read MP4 binary looking for JPEG/PNG embedded cover art
+        $fh = @fopen($path,'rb'); if (!$fh) return null;
+        $data = fread($fh, min(filesize($path), 1*1024*1024)); // first 1MB
+        fclose($fh);
+        // Look for JPEG SOI marker
+        $pos = strpos($data,"ÿØÿ");
+        if ($pos!==false) {
+        $end = strrpos($data,"ÿÙ");
+        if ($end!==false && $end>$pos) return substr($data,$pos,$end-$pos+2);
+        }
+        return null;
+        }
+
+        private function attach_video_thumb(int $video_id, string $thumb_f, string $thumb_fn, array $ud, string $method): array
+        {
+        // Check if thumbnail attachment already exists, delete it
+        $old_thumb_id = get_post_meta($video_id,'_sio_screenshot_id',true);
+        if ($old_thumb_id) wp_delete_attachment($old_thumb_id,true);
+
+        // Register as WordPress attachment
+        $filetype = wp_check_filetype($thumb_fn);
+        $rel_path = str_replace($ud['basedir'].'/','',$thumb_f);
+
+        $thumb_id = wp_insert_attachment([
+        'post_mime_type' => $filetype['type'],
+        'post_title' => sanitize_file_name($thumb_fn),
+        'post_content' => '',
+        'post_status' => 'inherit',
+        'post_parent' => $video_id,
+        ], $thumb_f, $video_id);
+
+        if (is_wp_error($thumb_id)) return ['success'=>false,'error'=>$thumb_id->get_error_message()];
+
+        // Generate metadata + thumbnails
+        require_once ABSPATH.'wp-admin/includes/image.php';
+        $meta = wp_generate_attachment_metadata($thumb_id,$thumb_f);
+        wp_update_attachment_metadata($thumb_id,$meta);
+
+        // Set as video's featured image
+        update_post_meta($video_id,'_thumbnail_id',$thumb_id);
+        update_post_meta($video_id,'_sio_screenshot_id',$thumb_id);
+
+        return [
+        'thumb_id' => $thumb_id,
+        'thumb_url' => wp_get_attachment_image_url($thumb_id,'medium'),
+        'thumb_fn' => $thumb_fn,
+        'method' => $method,
+        'width' => $meta['width'] ?? 0,
+        'height' => $meta['height'] ?? 0,
+        ];
+        }
+
     <?php }
 }
 new SmartImageOptimizer();

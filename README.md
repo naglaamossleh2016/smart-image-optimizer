@@ -4,7 +4,7 @@
 **Author:** naglaa mossleh
 **Requires:** WordPress 5.0+, PHP 7.4+
 
-AI-powered WordPress plugin for managing your media library. Rename images with SEO-friendly names, resize them, find and delete unused files, auto-categorize into folders, and audit broken references — all from one admin page.
+AI-powered WordPress plugin for managing your media library. Rename images with SEO-friendly names, resize them, find and delete unused files, auto-categorize into folders, audit broken references, and now manage your video library with AI SEO metadata and thumbnail extraction — all from one admin page.
 
 ---
 
@@ -19,7 +19,7 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 ### Image Browser
 
 - Grid view of all media library images with thumbnail previews
-- Search by filename, filter by name quality, and paginate results
+- Search by filename, filter by name quality (all / bad filenames / large +300 KB), and paginate results
 - Select individual images or all visible images for bulk operations
 - Highlights images with poor filenames (generic names like `IMG_1234`, `WhatsApp Image`, etc.)
 
@@ -28,7 +28,7 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 - Send an image to an AI provider and get a descriptive, SEO-friendly filename back
 - Preview and edit the suggested name before saving
 - Automatically updates all references to the old filename across the entire database
-- Sets alt text on the attachment after renaming
+- Sets alt text, caption, and description on the attachment after renaming
 
 ### Manual Rename
 
@@ -39,10 +39,11 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 
 - Resize images individually or in bulk
 - Four resize modes:
-  - **Fixed height** — scales uniformly to a target height
+  - **Fixed height** — scales uniformly to a target height (recommended)
   - **Max width** — scales down to a maximum width while preserving ratio
-  - **Crop** — crops to an exact width × height
+  - **Crop** — crops to an exact width x height
   - **Fixed width & height** — stretches/squishes to exact dimensions
+- Supports both upscale and downscale
 - Reports old vs. new dimensions and KB saved
 
 ### Bulk Operations
@@ -51,7 +52,18 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
   - **Rename** — AI renames all selected images
   - **Resize** — resizes all selected images
   - **Rename + Resize** — does both in one pass
-- Processes in batches of 5 with a live progress bar and per-image log
+- Processes in batches with a live progress bar and per-image log
+
+### Video Manager
+
+- Browse all videos in the media library with search and pagination
+- Displays file size (MB), duration, resolution, and MIME type for each video
+- **AI SEO** — generates an SEO-optimized title, slug, description, and tags from the video filename using your configured AI provider (text-based, no vision API needed)
+- **Screenshot / Thumbnail** — extracts a frame from a video and sets it as the video's featured image using one of three methods:
+  1. FFmpeg (best quality, requires FFmpeg on the server)
+  2. WordPress built-in video metadata reader (if available)
+  3. Embedded MP4 cover art (GD extraction from moov atom)
+- Shows a notice if FFmpeg is not detected on the server
 
 ### Unused Image Scanner
 
@@ -74,9 +86,9 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 ### Settings
 
 - Choose your AI provider:
-  - **Groq** (free tier available) — uses vision-capable models
-  - **Google Gemini** — uses `gemini-1.5-flash` for image analysis
-  - **Anthropic Claude** — defaults to `claude-haiku-4-5-20251001`, supports other Claude models
+  - **Groq** (free tier available) — uses Llama 4 Vision (`meta-llama/llama-4-scout-17b-16e-instruct`)
+  - **Google Gemini** — tries `gemini-1.5-flash-8b` → `gemini-1.5-flash` → `gemini-2.0-flash-lite` → `gemini-2.0-flash` with automatic fallback
+  - **Anthropic Claude** — choose between `claude-haiku-4-5-20251001` (fast) or `claude-sonnet-4-6` (accurate)
 - Per-provider API key storage (masked input with show/hide toggle)
 - Test connection button to verify your key before running bulk jobs
 - Rename language setting — generate filenames in any language
@@ -102,25 +114,27 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 | PHP             | 7.4 (uses typed properties)    |
 | GD or Imagick   | Required for resize operations |
 | AI provider key | Groq, Gemini, or Anthropic     |
+| FFmpeg          | Optional — required for video screenshot extraction |
 
 ---
 
 ## AI Provider Comparison
 
-| Provider         | Cost                | Notes                                       |
-| ---------------- | ------------------- | ------------------------------------------- |
-| Groq             | Free tier available | Fast inference; vision support required     |
-| Google Gemini    | Free tier available | Uses `gemini-1.5-flash-8b`                  |
-| Anthropic Claude | Paid                | Uses `claude-haiku-4-5-20251001` by default |
+| Provider         | Cost                | Notes                                                          |
+| ---------------- | ------------------- | -------------------------------------------------------------- |
+| Groq             | Free tier available | Fast inference; uses Llama 4 Scout Vision                      |
+| Google Gemini    | Free tier available | Auto-falls back across flash models; free in some regions      |
+| Anthropic Claude | Paid                | Haiku (fast, ~$0.001/image) or Sonnet (accurate); best results |
 
 ---
 
 ## How Renaming Works
 
 1. The plugin renames the physical file on disk.
-2. It updates the `post_title`, `post_name`, `guid`, and `_wp_attached_file` / `_wp_attachment_metadata` fields in the database.
-3. It runs a search-and-replace for the old filename across `post_content`, `postmeta`, and `options` tables.
-4. The count of updated database rows is shown after each rename.
+2. It updates the `post_title`, `post_name`, `post_excerpt`, `post_content`, `guid`, and `_wp_attached_file` / `_wp_attachment_metadata` fields in the database.
+3. It sets the `_wp_attachment_image_alt` meta (alt text) to the human-readable version of the new slug.
+4. It runs a search-and-replace for the old filename across `post_content`, `post_excerpt`, `postmeta`, `options`, `termmeta`, and `usermeta` tables.
+5. The count of updated database rows is shown after each rename.
 
 > **Note:** Always back up your site before running bulk rename or delete operations. These actions cannot be undone.
 
@@ -148,9 +162,14 @@ The plugin admin page requires the `manage_options` capability (Administrator ro
 
 ### 4.0.0
 
+- Added **Video Manager** tab — browse, AI-SEO, and screenshot extraction for video attachments
+- Added AI SEO metadata generation for videos (title, slug, description, tags)
+- Added video thumbnail extraction via FFmpeg, WordPress metadata, or embedded MP4 cover art
 - Added smart categorize with optional folder organization
 - Added reference audit tool
-- Added multi-provider AI support (Groq, Gemini, Claude)
+- Added multi-provider AI support (Groq with Llama 4 Vision, Gemini with model fallback, Claude Haiku/Sonnet)
 - Added bulk rename + resize in a single pass
 - Added connection test for API keys
-- Redesigned UI with tabbed layout
+- Rename now updates alt text, caption (post_excerpt), and description (post_content)
+- Resize supports both upscale and downscale in all modes
+- Redesigned UI with tabbed layout (Images, Videos, Bulk AI, Unused, Categorize, Audit, Settings)
