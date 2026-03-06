@@ -54,17 +54,6 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
   - **Rename + Resize** — does both in one pass
 - Processes in batches with a live progress bar and per-image log
 
-### Video Manager
-
-- Browse all videos in the media library with search and pagination
-- Displays file size (MB), duration, resolution, and MIME type for each video
-- **AI SEO** — generates an SEO-optimized title, slug, description, and tags from the video filename using your configured AI provider (text-based, no vision API needed)
-- **Screenshot / Thumbnail** — extracts a frame from a video and sets it as the video's featured image using one of three methods:
-  1. FFmpeg (best quality, requires FFmpeg on the server)
-  2. WordPress built-in video metadata reader (if available)
-  3. Embedded MP4 cover art (GD extraction from moov atom)
-- Shows a notice if FFmpeg is not detected on the server
-
 ### Unused Image Scanner
 
 - Scans all post content, metadata, and options to find images not referenced anywhere
@@ -108,12 +97,12 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 
 ## Requirements
 
-| Requirement     | Minimum                        |
-| --------------- | ------------------------------ |
-| WordPress       | 5.0                            |
-| PHP             | 7.4 (uses typed properties)    |
-| GD or Imagick   | Required for resize operations |
-| AI provider key | Groq, Gemini, or Anthropic     |
+| Requirement     | Minimum                                             |
+| --------------- | --------------------------------------------------- |
+| WordPress       | 5.0                                                 |
+| PHP             | 7.4 (uses typed properties)                         |
+| GD or Imagick   | Required for resize operations                      |
+| AI provider key | Groq, Gemini, or Anthropic                          |
 | FFmpeg          | Optional — required for video screenshot extraction |
 
 ---
