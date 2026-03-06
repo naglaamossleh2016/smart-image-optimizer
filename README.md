@@ -8,6 +8,12 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 
 ---
 
+## Screenshot
+
+![Smart Image Optimizer](screenshots/screenshot.png)
+
+---
+
 ## Features
 
 ### Image Browser
