@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.user
+
+# WordPress
+*.log
+wp-config.php
+
+# Node (if any build tools added later)
+node_modules/
