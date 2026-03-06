@@ -10,29 +10,33 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 
 ## Screenshot
 
-![Smart Image Optimizer](screenshots/screenshot.png)
+![Smart Image Optimizer](screenshot/screenshot.png)
 
 ---
 
 ## Features
 
 ### Image Browser
+
 - Grid view of all media library images with thumbnail previews
 - Search by filename, filter by name quality, and paginate results
 - Select individual images or all visible images for bulk operations
 - Highlights images with poor filenames (generic names like `IMG_1234`, `WhatsApp Image`, etc.)
 
 ### AI Rename
+
 - Send an image to an AI provider and get a descriptive, SEO-friendly filename back
 - Preview and edit the suggested name before saving
 - Automatically updates all references to the old filename across the entire database
 - Sets alt text on the attachment after renaming
 
 ### Manual Rename
+
 - Rename any image by hand via a modal dialog
 - All internal links, post content, and metadata are updated sitewide automatically
 
 ### Resize
+
 - Resize images individually or in bulk
 - Four resize modes:
   - **Fixed height** — scales uniformly to a target height
@@ -42,6 +46,7 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 - Reports old vs. new dimensions and KB saved
 
 ### Bulk Operations
+
 - Select any number of images from the browser, then run one of:
   - **Rename** — AI renames all selected images
   - **Resize** — resizes all selected images
@@ -49,21 +54,25 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 - Processes in batches of 5 with a live progress bar and per-image log
 
 ### Unused Image Scanner
+
 - Scans all post content, metadata, and options to find images not referenced anywhere
 - Displays a grid of unreferenced images with their file sizes
 - One-click bulk delete to recover disk space
 
 ### Smart Categorize
+
 - AI analyzes selected images and groups them into semantic categories
 - Categories are saved as a WordPress `media_cat` taxonomy on each attachment
 - Optional: physically move image files into `uploads/categories/{name}/` subfolders, with all database references updated automatically
 
 ### Reference Audit
+
 - Enter an old filename to scan every database table for references to it
 - Shows which tables and rows contain the filename
 - Enter a new filename and fix all references in one click
 
 ### Settings
+
 - Choose your AI provider:
   - **Groq** (free tier available) — uses vision-capable models
   - **Google Gemini** — uses `gemini-1.5-flash` for image analysis
@@ -87,22 +96,22 @@ AI-powered WordPress plugin for managing your media library. Rename images with 
 
 ## Requirements
 
-| Requirement | Minimum |
-|---|---|
-| WordPress | 5.0 |
-| PHP | 7.4 (uses typed properties) |
-| GD or Imagick | Required for resize operations |
-| AI provider key | Groq, Gemini, or Anthropic |
+| Requirement     | Minimum                        |
+| --------------- | ------------------------------ |
+| WordPress       | 5.0                            |
+| PHP             | 7.4 (uses typed properties)    |
+| GD or Imagick   | Required for resize operations |
+| AI provider key | Groq, Gemini, or Anthropic     |
 
 ---
 
 ## AI Provider Comparison
 
-| Provider | Cost | Notes |
-|---|---|---|
-| Groq | Free tier available | Fast inference; vision support required |
-| Google Gemini | Free tier available | Uses `gemini-1.5-flash-8b` |
-| Anthropic Claude | Paid | Uses `claude-haiku-4-5-20251001` by default |
+| Provider         | Cost                | Notes                                       |
+| ---------------- | ------------------- | ------------------------------------------- |
+| Groq             | Free tier available | Fast inference; vision support required     |
+| Google Gemini    | Free tier available | Uses `gemini-1.5-flash-8b`                  |
+| Anthropic Claude | Paid                | Uses `claude-haiku-4-5-20251001` by default |
 
 ---
 
@@ -138,6 +147,7 @@ The plugin admin page requires the `manage_options` capability (Administrator ro
 ## Changelog
 
 ### 4.0.0
+
 - Added smart categorize with optional folder organization
 - Added reference audit tool
 - Added multi-provider AI support (Groq, Gemini, Claude)
